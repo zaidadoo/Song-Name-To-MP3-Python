@@ -1,23 +1,19 @@
 import requests
 import urllib
 import os
-import selenium
 import time
-from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException
-from selenium.webdriver.chrome.options import Options
+import subprocess
 from bs4 import BeautifulSoup
+from pytube import YouTube
+from mp3_tagger import MP3File, VERSION_1, VERSION_2, VERSION_BOTH
 
-options = Options()
-options.add_experimental_option("prefs", {
-  "download.prompt_for_download": False,
-})
+checkIn = open("nodownload.txt", "r")
 
-options.add_argument("--headless")
-driver = webdriver.Chrome('chromedriver.exe')
-
-open('nodownload.txt', 'w').close()
-
+if checkIn.read()=='1':
+	with open('songs.txt', 'r') as fin:
+		data = fin.read().splitlines(True)
+	with open('songs.txt', 'w') as fout:
+		fout.writelines(data[1:])
 
 i = 0
 names = []
@@ -30,17 +26,21 @@ for x in f:
 	names.append(name)
 
 if i < 1:
-		print('no songs founds in songs.txt')
-		quit()
+	print('No songs founds in songs.txt')
+	quit()
 	
 x = 0
 	
 while x < i:
+
+	with open('nodownload.txt', 'w') as checkOut:
+		checkOut.write('1')
+
 	vids = []
 
 	textToSearch = names[x]
 	print('[',x + 1,'/',i,']')
-	print('song searching for: ' + textToSearch)
+	print('Song searching for: ' + textToSearch)
 	query = urllib.parse.quote(textToSearch)
 	print('getting link...')
 	url = "https://www.youtube.com/results?search_query=" + query
@@ -50,38 +50,79 @@ while x < i:
 	vids = soup.findAll(attrs={'class':'yt-uix-tile-link'})
 	
 	link = 'youtube.com' + vids[0]['href'] + '\n'
-	print('link found')
 	
-	print('sending youtube link to converter...')
-
-	driver.get('https://2conv.com/')
-	id_box = driver.find_element_by_id('convertUrl')
-	id_box.send_keys(link)
+	print('Link found')
+	print('\n')
 	
-	print('waiting for song to convert to mp3...')
+	print('Sending youtube link to converter...')
+	print('\n')
 	
-	checker = "true"
+	print('Downloading video to storage...')
+	print('\n')
 	
-	while checker == "true":
-		try:
-			elements = driver.find_element_by_partial_link_text('feedback')
-		except NoSuchElementException:
-			checker = "true"
-		for elements in driver.find_elements_by_partial_link_text('feedback'):
-			if elements.text == "send feedback":
-				checker = "false"
-				print('could not download ' + names[x])
-				file = open("nodownload.txt","a")
-				file.write(names[x] + "\n")
-				file.close()
-		urls = driver.current_url
-		if "downloads/mp3" in urls:
-			checker = "false"
-			
-	if "downloads/mp3" in urls:
-		print('download commencing...')
-		download = driver.find_element_by_class_name('text')
-		download.click()
+	yt = YouTube(link)
+	stream = yt.streams.get_by_itag('140')
+	stream.download('videos/')
+	
+	default_filename = yt.title
+	
+	default_filename = default_filename.replace("/", "")
+	default_filename = default_filename.replace(".", "")
+	default_filename = default_filename.replace(",", "")
+	default_filename = default_filename.replace("'", "")
+	default_filename = default_filename.replace("\"", "")
+	default_filename = default_filename.replace(";", "")
+	default_filename = default_filename.replace(":", "")
+	
+	print('Waiting for video to convert to mp3...')
+	print('\n')
+	
+	subprocess.call([
+		'ffmpeg',
+		'-i', 'videos/%s.mp4' % default_filename, 
+		'music/%s.mp3' % default_filename
+	])
+	os.remove("videos/%s.mp4" % default_filename)
+	
+	print('\n')
+	
+	mp3 = MP3File('music/%s.mp3' % default_filename)
+	
+	if default_filename.find('-')==-1:
+	
+		mp3.artist = ""
+		mp3.song = default_filename
+		mp3.album = ""
+		mp3.comment = ""
+		
+		mp3.save()
+		
+	else:
+	
+		splitter = default_filename.split('-', 1)
+		
+		singer = splitter[0]
+		title = splitter[1]
+		
+		mp3.artist = singer
+		mp3.song = title
+		mp3.album = ""
+		mp3.comment = ""
+		
+		mp3.save()
+	
+	print('Song converted successfully...')
+	print('\n')
+	
+	with open('nodownload.txt', 'w') as checkOut:
+		checkOut.write('0')
+	
+	with open('songs.txt', 'r') as fin:
+		data = fin.read().splitlines(True)
+	with open('songs.txt', 'w') as fout:
+		fout.writelines(data[1:])
+	
 	x = x + 1
-print('download done, check nodownload.txt in case any songs didnt download, and please make sure you saved these links as executing another search will delete the old nodownload.txt')
-quit()
+print('Download done.')
+input()
+os.system("pause")
